@@ -15,6 +15,9 @@ from psutil import disk_usage, cpu_percent, virtual_memory, Process as psprocess
 WORKING = []
 QUEUE = {}
 OK = {}
+ACTIVE_PROCESSES = set()
+ACTIVE_TASKS = set()
+CANCEL_REQUESTED = set()
 uptime = dt.now()
 for _directory in (DATA_DIR, DOWNLOAD_DIR, ENCODE_DIR, THUMB_DIR):
     os.makedirs(_directory, exist_ok=True)
@@ -252,6 +255,42 @@ async def clearqueue(e):
     await e.reply("**Cleared Queued Files!**")
     QUEUE.clear()
     return
+
+
+async def cancel_current(e):
+    """Stop the active FFmpeg/download job and remove its temporary files."""
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
+        return
+    if not ACTIVE_TASKS and not ACTIVE_PROCESSES and not WORKING:
+        return await e.reply("**No active encoding job.**")
+    CANCEL_REQUESTED.add("active")
+    stopped = 0
+    current_task = asyncio.current_task()
+    for task in list(ACTIVE_TASKS):
+        if task is not current_task and not task.done():
+            task.cancel()
+    for process in list(ACTIVE_PROCESSES):
+        try:
+            process.kill()
+            stopped += 1
+        except ProcessLookupError:
+            pass
+        except Exception:
+            LOGS.exception("Unable to stop an active encoding process")
+    ACTIVE_PROCESSES.clear()
+    for directory in (DOWNLOAD_DIR, ENCODE_DIR):
+        for path in directory.iterdir():
+            if path.is_file():
+                try:
+                    path.unlink()
+                except OSError:
+                    LOGS.warning("Unable to remove temporary file %s", path)
+    WORKING.clear()
+    await e.reply(
+        "**⛔ Encoding cancelled.**\nThe active job was stopped and temporary files were cleared."
+        if stopped else
+        "**⛔ Cancellation requested.**\nThe active job will stop at the next safe point."
+    )
 
 
 async def fast_download(e, download_url, filename=None):

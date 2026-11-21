@@ -65,11 +65,11 @@ except OSError as exc:
     _errors.append(f"BOT_DATA_DIR (cannot create writable directory {DATA_DIR}: {exc})")
 
 ffmpegcode = [
-    "-preset faster -c:v libx265 -x265-params "
+    "-preset veryfast -c:v libx265 -x265-params "
     "'bframes=8:psy-rd=1:ref=3:aq-mode=3:aq-strength=0.8:deblock=1,1' "
     "-metadata 'title=Encoded By TGVid-Comp (https://github.com/Zylern/TGVid-Comp)' "
     "-pix_fmt yuv420p -crf 30 -c:a libopus -b:a 32k -c:s copy -map 0 "
-    "-ac 2 -ab 32k -vbr 2 -level 3.1 -threads 1"
+    "-ac 2 -ab 32k -vbr 2 -level 3.1 -threads 0"
 ]
 
 if _errors:

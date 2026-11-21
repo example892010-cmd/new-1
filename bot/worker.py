@@ -73,7 +73,19 @@ async def dl_link(event):
     process = await asyncio.create_subprocess_shell(
         cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
-    stdout, stderr = await process.communicate()
+    ACTIVE_PROCESSES.add(process)
+    try:
+        stdout, stderr = await process.communicate()
+    finally:
+        ACTIVE_PROCESSES.discard(process)
+    if "active" in CANCEL_REQUESTED:
+        CANCEL_REQUESTED.discard("active")
+        WORKING.clear()
+        if os.path.exists(dl):
+            os.remove(dl)
+        if os.path.exists(out):
+            os.remove(out)
+        return
     er = stderr.decode()
     try:
         if er:
@@ -134,24 +146,31 @@ async def _encode_one(event, source, output, height, duration, status_msg):
            "-progress", "pipe:1", "-nostats", output]
     process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                    stderr=asyncio.subprocess.PIPE)
+    ACTIVE_PROCESSES.add(process)
     last_update = 0
-    while True:
-        line = await process.stdout.readline()
-        if not line:
-            break
-        line = line.decode(errors="ignore").strip()
-        if line.startswith("out_time_ms=") and duration > 0:
-            try:
-                elapsed = int(line.split("=", 1)[1]) / 1_000_000
-                pct = max(0, min(100, int(elapsed / duration * 100)))
-                if pct != last_update and (pct % 5 == 0 or pct == 100):
-                    bars = "■" * (pct // 10) + "□" * (10 - pct // 10)
-                    await status_msg.edit(f"**🗜 Encoding {height}p**\n{bars} **{pct}%**")
-                    last_update = pct
-            except Exception:
-                pass
-    stderr = await process.stderr.read()
-    rc = await process.wait()
+    try:
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line = line.decode(errors="ignore").strip()
+            if line.startswith("out_time_ms=") and duration > 0:
+                try:
+                    elapsed = int(line.split("=", 1)[1]) / 1_000_000
+                    pct = max(0, min(100, int(elapsed / duration * 100)))
+                    if pct != last_update and (pct % 5 == 0 or pct == 100):
+                        bars = "■" * (pct // 10) + "□" * (10 - pct // 10)
+                        await status_msg.edit(f"**🗜 Encoding {height}p**\n{bars} **{pct}%**")
+                        last_update = pct
+                except Exception:
+                    pass
+        stderr = await process.stderr.read()
+        rc = await process.wait()
+    finally:
+        ACTIVE_PROCESSES.discard(process)
+    if "active" in CANCEL_REQUESTED:
+        CANCEL_REQUESTED.discard("active")
+        raise asyncio.CancelledError("Encoding cancelled by user")
     if rc != 0:
         raise RuntimeError(stderr.decode(errors="replace")[-3500:] or f"FFmpeg failed ({rc})")
 
@@ -172,6 +191,9 @@ async def _process_video(event, source, original_name, download_seconds=0):
     stem = os.path.splitext(os.path.basename(original_name))[0]
     total_encode_start = dt.now()
     for height in (480, 720, 1080):
+        if "active" in CANCEL_REQUESTED:
+            CANCEL_REQUESTED.discard("active")
+            raise asyncio.CancelledError("Encoding cancelled by user")
         out = os.path.join(str(ENCODE_DIR), f"{stem}_{height}p.mkv")
         msg = await event.reply(f"**🗜 Preparing {height}p encoding...**")
         try:
@@ -206,6 +228,8 @@ async def _process_video(event, source, original_name, download_seconds=0):
 
 
 async def encod(event):
+    current_task = asyncio.current_task()
+    ACTIVE_TASKS.add(current_task)
     try:
         if not event.is_private or str(event.sender_id) not in OWNER and event.sender_id != DEV:
             return
@@ -238,3 +262,5 @@ async def encod(event):
     except Exception as er:
         LOGS.exception("Auto encoding failed: %s", er)
         WORKING.clear()
+    finally:
+        ACTIVE_TASKS.discard(current_task)

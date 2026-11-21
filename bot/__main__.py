@@ -104,6 +104,11 @@ async def _(e):
     await clearqueue(e)
 
 
+@bot.on(events.NewMessage(pattern="/cancel"))
+async def _(e):
+    await cancel_current(e)
+
+
 @bot.on(events.NewMessage(pattern="/speed"))
 async def _(e):
     if str(e.sender_id) not in OWNER and e.sender_id !=DEV:

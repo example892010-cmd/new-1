@@ -16,14 +16,29 @@ WORKING = []
 QUEUE = {}
 OK = {}
 uptime = dt.now()
-os.system(f"wget {THUMBNAIL} -O thumb.jpg")
+for _directory in (DATA_DIR, DOWNLOAD_DIR, ENCODE_DIR, THUMB_DIR):
+    os.makedirs(_directory, exist_ok=True)
 
-if not os.path.isdir("downloads/"):
-    os.mkdir("downloads/")
-if not os.path.isdir("encode/"):
-    os.mkdir("encode/")
-if not os.path.isdir("thumb/"):
-    os.mkdir("thumb/")
+
+async def ensure_thumbnail():
+    """Download the configured thumbnail without blocking module import."""
+    if THUMBNAIL_PATH.exists() and THUMBNAIL_PATH.stat().st_size > 0:
+        return True
+    temporary_path = THUMBNAIL_PATH.with_suffix(".download")
+    try:
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(THUMBNAIL) as response:
+                response.raise_for_status()
+                temporary_path.write_bytes(await response.read())
+        os.replace(temporary_path, THUMBNAIL_PATH)
+        LOGS.info("Thumbnail downloaded to %s", THUMBNAIL_PATH)
+        return True
+    except Exception:
+        if temporary_path.exists():
+            temporary_path.unlink()
+        LOGS.exception("Unable to download thumbnail from %s; continuing without it", THUMBNAIL)
+        return False
 
 
 def stdr(seconds: int) -> str:
@@ -117,7 +132,7 @@ async def test(event):
 
 
 async def sysinfo(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     total, used, free, disk= disk_usage('/')
     total = hbs(total)
@@ -184,7 +199,7 @@ async def skip(e):
 
 
 async def renew(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     await e.reply("**Cleared Queued, Working Files and Cached Downloads!**")
     WORKING.clear()
@@ -201,7 +216,7 @@ async def renew(e):
 
 
 async def coding(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     ffmpeg = e.text.split(" ", maxsplit=1)[1]
     ffmpegcode.clear()
@@ -211,26 +226,28 @@ async def coding(e):
 
 
 async def getlogs(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     await e.client.send_file(e.chat_id, file=LOG_FILE_NAME, force_document=True)
 
 
 async def getthumb(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
-    await e.client.send_file(e.chat_id, file="/bot/thumb.jpg", force_document=False, caption="**Your Current Thumbnail.**")
+    if not THUMBNAIL_PATH.exists():
+        return await e.reply("**Thumbnail is not available yet.**")
+    await e.client.send_file(e.chat_id, file=str(THUMBNAIL_PATH), force_document=False, caption="**Your Current Thumbnail.**")
 
 
 async def getcode(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     await e.reply(f"**Your Current FFMPEG Code is**\n\n`{ffmpegcode[0]}`")
     return
 
 
 async def clearqueue(e):
-    if str(e.sender_id) not in OWNER and event.sender_id !=DEV:
+    if str(e.sender_id) not in OWNER and e.sender_id != DEV:
         return
     await e.reply("**Cleared Queued Files!**")
     QUEUE.clear()
@@ -252,7 +269,7 @@ async def fast_download(e, download_url, filename=None):
             if not filename:
                 filename = download_url.rpartition("/")[-1]
             filename = unquote(filename)
-            filename = os.path.join("downloads", filename)
+            filename = os.path.join(str(DOWNLOAD_DIR), filename)
             total_size = int(response.headers.get("content-length", 0)) or None
             downloaded_size = 0
             with open(filename, "wb") as f:

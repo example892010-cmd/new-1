@@ -1,12 +1,12 @@
 # https://github.com/1Danish-00/CompressorQueue/blob/main/License> .
 
-import logging
 import asyncio
 import glob
 import inspect
 import io
 import itertools
 import json
+import logging
 import math
 import os
 import re
@@ -20,42 +20,54 @@ from datetime import datetime as dt
 from logging import DEBUG, INFO, basicConfig, getLogger, warning
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-import aiohttp
-import psutil
-from html_telegraph_poster import TelegraphPoster
-from telethon import Button, TelegramClient, errors, events, functions, types
-from telethon.sessions import StringSession
-from telethon.utils import pack_bot_file_id
-from .config import *
-LOG_FILE_NAME = "TGVid-Comp@Log.txt"
 
-
-
-if os.path.exists(LOG_FILE_NAME):
-    with open(LOG_FILE_NAME, "r+") as f_d:
-        f_d.truncate(0)
-
+# Configure stdout/stderr logging before application and third-party imports so
+# import/configuration failures are visible in Render logs.
+_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format=_LOG_FORMAT,
     datefmt="%d-%b-%y %H:%M:%S",
-    handlers=[
-        RotatingFileHandler(
-            LOG_FILE_NAME,
-            maxBytes=2097152000,
-            backupCount=10
-        ),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True,
 )
-logging.getLogger("FastTelethon").setLevel(logging.INFO)
-logging.getLogger("urllib3").setLevel(logging.INFO)
 LOGS = logging.getLogger(__name__)
 
 try:
+    from .config import *
+except Exception:
+    LOGS.exception("Failed to load bot configuration")
+    raise
+
+try:
+    _log_path = Path(LOG_FILE_NAME)
+    _log_path.parent.mkdir(parents=True, exist_ok=True)
+    _file_handler = RotatingFileHandler(
+        LOG_FILE_NAME,
+        maxBytes=20 * 1024 * 1024,
+        backupCount=3,
+    )
+    _file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, "%d-%b-%y %H:%M:%S"))
+    logging.getLogger().addHandler(_file_handler)
+except OSError:
+    LOGS.exception("Unable to create file log handler; continuing with console logs")
+
+try:
+    import aiohttp
+    import psutil
+    from html_telegraph_poster import TelegraphPoster
+    from telethon import Button, TelegramClient, errors, events, functions, types
+    from telethon.sessions import StringSession
+    from telethon.utils import pack_bot_file_id
+except Exception:
+    LOGS.exception("Failed to import a runtime dependency")
+    raise
+
+logging.getLogger("FastTelethon").setLevel(logging.INFO)
+logging.getLogger("urllib3").setLevel(logging.INFO)
+
+try:
     bot = TelegramClient(None, APP_ID, API_HASH)
-except Exception as e:
-    LOGS.info("Environment vars are missing! Kindly recheck.")
-    LOGS.info("Bot is quiting...")
-    LOGS.info(str(e))
-    exit()
+except Exception:
+    LOGS.exception("Failed to create the Telegram client")
+    raise RuntimeError("Telegram client initialization failed")

@@ -1,10 +1,23 @@
-FROM python:3.9.2-slim-buster
-RUN mkdir /bot && chmod 777 /bot
+FROM python:3.11.11-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /bot
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt -qq update && apt -qq install -y git wget pv jq python3-dev ffmpeg mediainfo
-RUN apt-get install neofetch wget -y -f
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        git \
+        jq \
+        mediainfo \
+        pv \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
-RUN pip3 install -r requirements.txt
-CMD ["bash","run.sh"]
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r requirements.txt
+
+CMD ["bash", "run.sh"]

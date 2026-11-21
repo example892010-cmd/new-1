@@ -3,6 +3,7 @@
 #    Script Improved by Zylern
 
 import time
+from pathlib import Path
 from .FastTelethon import download_file, upload_file
 from .funcn import *
 from .config import *
@@ -54,10 +55,10 @@ async def dl_link(event):
     kk = dl.split("/")[-1]
     aa = kk.split(".")[-1]
     newFile = dl.replace(f"downloads/", "").replace(f"_", " ")
-    rr = "encode"
+    rr = str(ENCODE_DIR)
     bb = kk.replace(f".{aa}", ".mkv")
     out = f"{rr}/{bb}"
-    thum = "thumb.jpg"
+    thum = str(THUMBNAIL_PATH)
     dtime = ts(int((es - s).seconds) * 1000)
     hehe = f"{out};{dl};0"
     wah = code(hehe)
@@ -158,7 +159,7 @@ async def _encode_one(event, source, output, height, duration, status_msg):
 async def _process_video(event, source, original_name, download_seconds=0):
     import subprocess
     from pathlib import Path
-    os.makedirs("encode", exist_ok=True)
+    os.makedirs(ENCODE_DIR, exist_ok=True)
     # Probe duration for progress reporting.
     try:
         probe = await asyncio.create_subprocess_exec(
@@ -171,7 +172,7 @@ async def _process_video(event, source, original_name, download_seconds=0):
     stem = os.path.splitext(os.path.basename(original_name))[0]
     total_encode_start = dt.now()
     for height in (480, 720, 1080):
-        out = os.path.join("encode", f"{stem}_{height}p.mkv")
+        out = os.path.join(str(ENCODE_DIR), f"{stem}_{height}p.mkv")
         msg = await event.reply(f"**🗜 Preparing {height}p encoding...**")
         try:
             await _encode_one(event, source, out, height, duration, msg)
@@ -195,7 +196,8 @@ async def _process_video(event, source, original_name, download_seconds=0):
             caption = (f"**Quality:** {height}p\n**Original Size:** {hbs(original_size)}\n"
                        f"**Encoded Size:** {hbs(output_size)}\n**Size Change:** {reduction:.2f}%")
             await event.client.send_file(event.chat_id, file=uploaded, caption=caption,
-                                        force_document=True, link_preview=False, thumb="thumb.jpg")
+                                        force_document=True, link_preview=False,
+                                        thumb=str(THUMBNAIL_PATH) if THUMBNAIL_PATH.exists() else None)
             await msg.edit(f"**✅ {height}p completed and uploaded.**")
         except Exception as exc:
             await msg.edit(f"**❌ Upload failed ({height}p)**\n`{str(exc)[:2000]}`")
@@ -223,7 +225,7 @@ async def encod(event):
         status = await event.reply("**📥 Downloading...**")
         started = time.time()
         filename = event.file.name or f"video_{dt.now().isoformat('_', 'seconds')}.mp4"
-        dl = os.path.join("downloads", filename)
+        dl = os.path.join(str(DOWNLOAD_DIR), filename)
         try:
             with open(dl, "wb") as f:
                 await download_file(client=event.client, location=doc, out=f,
